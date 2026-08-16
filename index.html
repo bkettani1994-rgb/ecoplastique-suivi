@@ -57,11 +57,18 @@
   .period-box .val{font-size:13.5px; font-weight:600; color:var(--ink-900); margin-top:3px; display:flex; align-items:center; justify-content:space-between; gap:8px;}
   .period-box .chevron{font-size:10px; color:var(--ink-500); transition:transform .15s;}
   .period-box.open .chevron{transform:rotate(180deg);}
-  .period-menu{ position:absolute; top:calc(100% + 6px); left:0; right:0; z-index:20; background:var(--card); border:1px solid var(--border); border-radius:10px; box-shadow:0 8px 24px rgba(15,23,42,.12); overflow:hidden; display:none; }
+  .period-menu{ position:absolute; top:calc(100% + 6px); left:0; right:0; z-index:20; background:var(--card); border:1px solid var(--border); border-radius:10px; box-shadow:0 8px 24px rgba(15,23,42,.12); overflow:hidden; display:none; width:260px; }
   .period-menu.show{display:block;}
   .period-option{ padding:10px 14px; font-size:12.5px; font-weight:500; color:var(--ink-700); cursor:pointer; transition:.1s; }
   .period-option:hover{background:var(--green-50); color:var(--green-700);}
   .period-option.active{background:var(--green-100); color:var(--green-700); font-weight:700;}
+  .period-custom{ padding:12px 14px; border-top:1px solid var(--border); cursor:default; }
+  .period-custom-row{display:flex; flex-direction:column; gap:4px; margin-bottom:10px;}
+  .period-custom-row label{font-size:10.5px; color:var(--ink-500); font-weight:600; text-transform:uppercase; letter-spacing:.3px;}
+  .period-custom-row input[type=date]{ border:1px solid var(--border); border-radius:8px; padding:7px 9px; font-size:12.5px; font-family:inherit; color:var(--ink-900); width:100%; }
+  .period-custom-apply{ width:100%; background:var(--green-600); color:#fff; border:none; border-radius:8px; padding:9px; font-size:12.5px; font-weight:600; cursor:pointer; }
+  .period-custom-apply:hover{background:var(--green-700);}
+  .period-custom-hint{font-size:10.5px; color:var(--ink-500); margin-top:6px; text-align:center;}
 
   .kpi-grid{ display:grid; grid-template-columns:repeat(6,1fr); gap:14px; margin-bottom:20px; }
   .kpi-card{ background:var(--card); border:1px solid var(--border); border-radius:var(--radius); padding:16px 16px 14px; box-shadow:var(--shadow); }
@@ -321,6 +328,8 @@ function mapRows(rows, produitLabel){
 let orders = [];
 let today = new Date();
 let selectedPeriodId = 'all';
+let customStart = null; // 'YYYY-MM-DD'
+let customEnd = null;   // 'YYYY-MM-DD'
 
 const PERIOD_PRESETS = [
   { id:'today', label:"Aujourd'hui" },
@@ -330,6 +339,10 @@ const PERIOD_PRESETS = [
   { id:'month', label:"Ce mois-ci" },
   { id:'all', label:"Depuis le début" },
 ];
+
+function toInputDate(d){
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
 
 function computePeriod(id){
   const end = new Date(today); end.setHours(23,59,59,999);
@@ -349,6 +362,16 @@ function computePeriod(id){
       start = new Date(minDate); start.setHours(0,0,0,0);
       break;
     }
+    case 'custom': {
+      if(!customStart) return computePeriod('30d');
+      const [ys,ms,ds] = customStart.split('-').map(Number);
+      const cs = new Date(ys, ms-1, ds); cs.setHours(0,0,0,0);
+      const endStr = customEnd || customStart;
+      const [ye,me,de] = endStr.split('-').map(Number);
+      const ce = new Date(ye, me-1, de); ce.setHours(23,59,59,999);
+      const lbl = (customEnd && customEnd !== customStart) ? (fmtDate(cs)+" — "+fmtDate(ce)) : fmtDate(cs);
+      return { start:cs, end:ce, label: lbl };
+    }
     case '30d': default:
       start = new Date(today); start.setDate(start.getDate()-29); start.setHours(0,0,0,0); break;
   }
@@ -358,18 +381,63 @@ function computePeriod(id){
 
 function buildPeriodMenu(){
   const menu = document.getElementById('periodMenu');
-  menu.innerHTML = PERIOD_PRESETS.map(p =>
+  const presetsHtml = PERIOD_PRESETS.map(p =>
     `<div class="period-option ${p.id===selectedPeriodId?'active':''}" data-period="${p.id}">${p.label}</div>`
   ).join('');
+  const customActive = selectedPeriodId === 'custom';
+  const sVal = customStart || toInputDate(today);
+  const eVal = customEnd || customStart || toInputDate(today);
+  menu.innerHTML = presetsHtml +
+    `<div class="period-option ${customActive?'active':''}" data-period="custom">📅 Personnalisé…</div>
+     <div class="period-custom" id="periodCustomForm">
+       <div class="period-custom-row">
+         <label>Du</label>
+         <input type="date" id="customStartInput" value="${sVal}">
+       </div>
+       <div class="period-custom-row">
+         <label>Au (laisser identique pour un seul jour)</label>
+         <input type="date" id="customEndInput" value="${eVal}">
+       </div>
+       <button class="period-custom-apply" id="applyCustomPeriod">Appliquer</button>
+       <div class="period-custom-hint">Une seule date = statistiques de ce jour précis</div>
+     </div>`;
+
   menu.querySelectorAll('.period-option').forEach(el=>{
     el.addEventListener('click', (e)=>{
       e.stopPropagation();
-      selectedPeriodId = el.dataset.period;
+      const id = el.dataset.period;
+      if(id === 'custom'){
+        // ne ferme pas le menu : laisse la personne choisir ses dates
+        document.getElementById('customStartInput').focus();
+        return;
+      }
+      selectedPeriodId = id;
       document.getElementById('periodBox').classList.remove('open');
       menu.classList.remove('show');
       renderDashboard();
     });
   });
+
+  const applyBtn = document.getElementById('applyCustomPeriod');
+  if(applyBtn){
+    applyBtn.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      const s = document.getElementById('customStartInput').value;
+      const en = document.getElementById('customEndInput').value;
+      if(!s) return;
+      customStart = s;
+      customEnd = en || s;
+      if(customEnd < customStart){ const tmp = customStart; customStart = customEnd; customEnd = tmp; }
+      selectedPeriodId = 'custom';
+      document.getElementById('periodBox').classList.remove('open');
+      menu.classList.remove('show');
+      renderDashboard();
+    });
+  }
+  const startInput = document.getElementById('customStartInput');
+  const endInput = document.getElementById('customEndInput');
+  if(startInput) startInput.addEventListener('click', (e)=>e.stopPropagation());
+  if(endInput) endInput.addEventListener('click', (e)=>e.stopPropagation());
 }
 document.getElementById('periodBox').addEventListener('click', ()=>{
   document.getElementById('periodBox').classList.toggle('open');
@@ -555,7 +623,7 @@ let currentPage = 1;
 const perPage = 10;
 
 function waLink(o){
-  if(o.waLinkSheet) return o.waLinkSheet;
+  if(o.waLinkSheet && o.waLinkSheet.startsWith('http')) return o.waLinkSheet;
   const msg = encodeURIComponent(`Bonjour ${o.client}, merci pour votre commande ${o.cmd} (${fmtDH(o.total)}).`);
   return `https://wa.me/${o.tel}?text=${msg}`;
 }
