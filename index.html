@@ -248,13 +248,28 @@ function hideStatus(){ document.getElementById('statusBanner').style.display = '
 function parseSheetDate(raw){
   if(!raw) return null;
   raw = String(raw).trim();
+  // Cette feuille exporte les dates au format américain m/d/yyyy (mois/jour/année).
   let m = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[\sT].*)?$/);
-  if(m) return new Date(parseInt(m[3]), parseInt(m[2])-1, parseInt(m[1]));
+  if(m){
+    let a = parseInt(m[1]), b = parseInt(m[2]);
+    const year = parseInt(m[3]);
+    let month, day;
+    if(a > 12){ day = a; month = b; }        // a ne peut être qu'un jour
+    else if(b > 12){ month = a; day = b; }   // b ne peut être qu'un jour
+    else { month = a; day = b; }             // ambigu → format source m/d/yyyy par défaut
+    const d = new Date(year, month-1, day);
+    // garde-fou : rejette toute date qui ne correspond pas au mois/jour attendus (débordement)
+    if(d.getMonth() !== month-1 || d.getDate() !== day) return null;
+    return d;
+  }
   m = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
   if(m) return new Date(parseInt(m[1]), parseInt(m[2])-1, parseInt(m[3]));
   const datePart = raw.split(/[\sT]/)[0];
   const d = new Date(datePart);
-  return isNaN(d) ? null : d;
+  if(isNaN(d)) return null;
+  // garde-fou général : ignore les dates hors d'une plage plausible
+  if(d.getFullYear() < 2020 || d.getFullYear() > 2035) return null;
+  return d;
 }
 function parseMontant(raw){
   if(raw===undefined || raw===null) return 0;
@@ -608,7 +623,7 @@ document.getElementById('exportBtn').addEventListener('click', ()=>{
   const header = ["N° Commande","Date","Client","Telephone","Ville","Produit","Statut Commande","Statut Livraison","Montant (MAD)"];
   const rows = filtered.map(o=>[o.cmd, fmtDate(o.date), o.client, o.tel, o.ville, o.produit, o.statutCommande, o.statutLivraison, o.total]);
   const csv = [header, ...rows].map(r=>r.join(";")).join("\n");
-  const blob = new Blob(["﻿"+csv], {type:"text/csv;charset=utf-8;"});
+  const blob = new Blob(["\uFEFF"+csv], {type:"text/csv;charset=utf-8;"});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url; a.download = "commandes_eco_plastique.csv"; a.click();
