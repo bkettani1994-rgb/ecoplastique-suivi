@@ -466,10 +466,11 @@ async function loadData(){
     orders = [...mapRows(rowsNappes, 'Nappes PVC'), ...mapRows(rowsMatelas, 'Protège-matelas')];
     orders.sort((a,b)=>b.date-a.date);
 
+    today = new Date(); // toujours la vraie date du jour, pas la date de la dernière commande
+
     if(orders.length === 0){
       showStatus('Connecté, mais aucune commande trouvée.', 'error');
     } else {
-      today = new Date(Math.max(...orders.map(o=>o.date.getTime())));
       showStatus('✓ ' + orders.length + ' commandes chargées — ' + new Date().toLocaleTimeString('fr-FR'), 'ok');
       setTimeout(hideStatus, 4000);
     }
